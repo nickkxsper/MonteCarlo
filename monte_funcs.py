@@ -44,8 +44,8 @@ def simulate_returns(data, rolling_lookback, n_paths, n_days_project, pred_col =
     generated = np.random.normal(rolling_mean,rolling_sd,1000)
     paths, ends = simulate_rndm_pnl(n_paths, cur, n_days_project,generated)
     df = pd.DataFrame(paths).transpose()
-    for col in df:
-        plt.plot(df[col])
+    #for col in df:
+    #    plt.plot(df[col])
     #print(f'Current Price. {cur}')
     #print(f'Projected Mean in {n_days_project} days. {np.mean(ends)}')
     #print(f'Projected Standard Deviation in {n_days_project} days. {np.std(ends)}')
