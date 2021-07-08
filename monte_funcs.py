@@ -6,6 +6,8 @@ import pylab
 import random
 import numpy
 from IPython.display import clear_output
+import datetime
+import math
 
 
 def pnl_walk(a, n, rates):
@@ -71,5 +73,156 @@ def historical_test(ticker, rolling_lookback, n_paths, n_days_project):
     data['E'] = E
     data['s'] = s
     data['Actual'] = data['Close'].shift(-1*n_days_project)
-    data['Error'] = data['Actual'] - data['E']
+    data['Error'] = (data['Actual'] - data['E'])/data['Actual']
+    
     return data
+
+
+def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_lookback, n_paths, n_days_project):
+    dfs = {}
+    for tkr in tkrs:#,'SPY', 'AAPL', 'FB', 'AMZN', 'BA', 'GM']:
+        pnls = {}
+        dta = historical_test(ticker = tkr, rolling_lookback = rolling_lookback, n_paths = n_paths, n_days_project  = n_days_project)
+        
+        pnl = [starting_amt]
+        pnl_tkr = [starting_amt]
+        
+        stopped_out = False
+        wait = 0
+        if strat == 'Long':
+            for i in range(len(dta)-1):
+                print(str(int(i)/(len(dta)-1)*100) + f'% done backtesting {tkr}')
+                clear_output(wait = True)
+                
+                max_val = max(pnl)
+                cur_val = pnl[i]
+                if (cur_val - max_val)/max_val < -1*max_draw:
+                    stopped_out = True
+                    print('stopped')
+                if stopped_out and wait < wait_after_stop:
+                    pnl.append(pnl[-1])
+                    pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
+                    wait += 1
+                    continue
+                else:    
+                    stopped_out = False
+                    pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
+                    if dta.iloc[i]['Close'] < dta.iloc[i]['E']:
+                        pnl.append(pnl[-1]*(1+dta.iloc[i+1]['Pct_Change']))
+                    else:
+                        pnl.append(pnl[-1])
+            
+            
+        if strat == 'Short':
+            for i in range(len(dta)-1):
+                print(str(int(i)/(len(dta)-1)*100) + f'% done backtesting {tkr}')
+                clear_output(wait = True)
+                
+                max_val = max(pnl)
+                cur_val = pnl[i]
+                
+                if (cur_val - max_val)/max_val < -1*max_draw:
+                    stopped_out = True
+                    print('stopped')
+                if stopped_out and wait < wait_after_stop:
+                    pnl.append(pnl[-1])
+                    pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
+                    wait += 1
+                    continue
+                else:
+                    stopped_out = False
+                    pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
+                    if dta.iloc[i]['Close'] > dta.iloc[i]['E']:
+                        pnl.append(pnl[-1]*(1+(-1*dta.iloc[i+1]['Pct_Change'])))
+                    else:
+                        pnl.append(pnl[-1])
+
+            
+        if strat == 'LongShort':
+            for i in range(len(dta)-1):
+                print(str(int(i)/(len(dta)-1)*100) + f'% done backtesting {tkr}')
+                clear_output(wait = True)
+                
+                max_val = max(pnl)
+                cur_val = pnl[i]
+                
+                if (cur_val - max_val)/max_val < -1*max_draw:
+                    stopped_out = True
+                    print('stopped')
+                if stopped_out and wait < wait_after_stop:
+                    pnl.append(pnl[-1])
+                    pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
+                    wait += 1
+                    continue 
+                else:
+                    pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
+                    if dta.iloc[i]['Close'] > dta.iloc[i]['E']:
+                        pnl.append(pnl[-1]*(1+(-1*dta.iloc[i+1]['Pct_Change'])))
+                    elif dta.iloc[i]['Close'] < dta.iloc[i]['E']:
+                        pnl.append(pnl[-1]*(1+dta.iloc[i+1]['Pct_Change']))
+                    else:
+                        pnl.append(pnl[-1])
+            
+      
+        pnls[f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'] = pnl 
+        pnls[f'Long_{tkr}'] = pnl_tkr
+
+        df = pd.DataFrame(pnls)
+        df['Strat_Ret'] = df[f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'] - df[f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'].shift(1)
+        df = df.set_index(yfinance.download(f'{tkr}').index[:(-n_days_project -rolling_lookback)])
+        dfs[f'{tkr}'] = df
+        #dfs.append(df)
+    length = len(tkrs)
+    keys = list(dfs.keys())
+    if length > 1:
+        fig, axs = plt.subplots(length, squeeze=False, constrained_layout = True)
+        for i in range(length):
+            for col in dfs[keys[i]]:
+                axs[i][0].plot(dfs[keys[i]][col], label = f'{col}')
+            axs[i][0].set_xlabel('Date')
+            axs[i][0].set_ylabel('Portfolio Value')
+            axs[i][0].set_title(f'{tkrs[i]}_lookback={rolling_lookback}_n_paths={n_paths}_n_days_project={n_days_project}_backtest')
+            
+            axs[i][0].legend()
+        axs[length+1][0].hist(dta['Error'])
+        axs[length+1][0].set_xlabel('Error')
+        axs[length+1][0].set_ylabel('Frequency')
+        axs[length+1][0].set_title(f'{tkr}_prediction_errors')
+    else:
+        fig, axs = plt.subplots(2, squeeze=False, constrained_layout = True)
+        for col in dfs[keys[0]]:
+            axs[0][0].plot(dfs[keys[0]][col], label = f'{col}')
+        axs[0][0].set_xlabel('Date')
+        axs[0][0].set_ylabel('Portfolio Value')
+        axs[0][0].set_title(f'{tkr}_lookback={rolling_lookback}_n_paths={n_paths}_n_days_project={n_days_project}_backtest')
+        
+        axs[0][0].legend()
+        
+        axs[1][0].hist(dta['Error'],bins = math.floor(np.sqrt(len(dta))))
+        axs[1][0].set_xlabel('Error')
+        axs[1][0].set_ylabel('Frequency')
+        axs[1][0].set_title(f'{tkr}_prediction_errors')
+        
+        
+    for tkr in tkrs:
+        mean_strat = np.mean(dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'])
+        sd_strat = np.std(dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'])
+        sharpe_strat = mean_strat/sd_strat
+        total_ret_strat = (dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'][-1] - dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'][0])/dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'][0]
+        total_ret_strat *=100
+        
+        mean_control = np.mean(dfs[f'{tkr}'][f'Long_{tkr}'])
+        sd_control = np.std(dfs[f'{tkr}'][f'Long_{tkr}'])
+        sharpe_control = mean_control/sd_control
+        total_ret_hodl = (dfs[f'{tkr}'][f'Long_{tkr}'][-1] - dfs[f'{tkr}'][f'Long_{tkr}'][0])/dfs[f'{tkr}'][f'Long_{tkr}'][0]
+        total_ret_hodl *=100
+        
+        print(f'Strat Sharpe ({rolling_lookback}_{n_paths}_{n_days_project}_{tkr}): {sharpe_strat}, Buy and Hold Sharpe ({tkr}): {sharpe_control}')
+        print(f'Return Strat(%): {total_ret_strat}, Return Buy and Hold(%): {total_ret_hodl}')
+        num_years = ((datetime.datetime.strptime(str(dfs[f'{tkr}'].index[-1]),'%Y-%m-%d %H:%M:%S').year + (datetime.datetime.strptime(str(dfs[f'{tkr}'].index[-1]),'%Y-%m-%d %H:%M:%S').month)/12))  - ((datetime.datetime.strptime(str(dfs[f'{tkr}'].index[0]),'%Y-%m-%d %H:%M:%S').year + (datetime.datetime.strptime(str(dfs[f'{tkr}'].index[0]),'%Y-%m-%d %H:%M:%S').month)/12))  #2021-06-04 00:00:00
+        print(num_years)
+        print(f'Anualized Return Strat(%): {(1+ total_ret_strat/100)**(1/num_years)-1}, Anualized Return Buy and Hold(%): {(1+ total_ret_hodl/100)**(1/num_years)- 1}')
+        
+        print(f'Anualized Vol Strat(%): {(1+ sd_strat/100)**(1/num_years)-1}, Anualized Vol Buy and Hold(%): {(1+ sd_control/100)**(1/num_years)- 1}')
+        print('\n')
+    return dfs
