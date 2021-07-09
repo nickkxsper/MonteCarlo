@@ -96,6 +96,7 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
         stopped_out = False
         stopped_out_before = False
         wait = 0
+        trades = 0
         if strat == 'Long':
             for i in range(len(dta)-1):
                 print(str(int(i)/(len(dta)-1)*100) + f'% done backtesting {tkr}')
@@ -123,6 +124,7 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
                     stopped_out = False
                     pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
                     if dta.iloc[i]['Close'] < dta.iloc[i]['E']:
+                        trades +=1
                         pnl.append(pnl[-1]*(1+dta.iloc[i+1]['Pct_Change']))
                     else:
                         pnl.append(pnl[-1])
@@ -156,6 +158,7 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
                     pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
                     if dta.iloc[i]['Close'] > dta.iloc[i]['E']:
                         pnl.append(pnl[-1]*(1+(-1*dta.iloc[i+1]['Pct_Change'])))
+                        trades +=1
                     else:
                         pnl.append(pnl[-1])
 
@@ -188,12 +191,14 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
                 else:
                     pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
                     if dta.iloc[i]['Close'] > dta.iloc[i]['E']:
+                        trades +=1
                         pnl.append(pnl[-1]*(1+(-1*dta.iloc[i+1]['Pct_Change'])))
                     elif dta.iloc[i]['Close'] < dta.iloc[i]['E']:
+                        trades +=1
                         pnl.append(pnl[-1]*(1+dta.iloc[i+1]['Pct_Change']))
                     else:
                         pnl.append(pnl[-1])
-            
+            print(f"Trades: {trades}")
       
         pnls[f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'] = pnl 
         pnls[f'Long_{tkr}'] = pnl_tkr
