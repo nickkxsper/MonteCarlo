@@ -8,6 +8,7 @@ import numpy
 from IPython.display import clear_output
 import datetime
 import math
+from hurst import compute_Hc
 
 
 def pnl_walk(a, n, rates):
@@ -43,7 +44,7 @@ def simulate_returns(data, rolling_lookback, n_paths, n_days_project, pred_col =
     cur = data[f'{pred_col}']
     rolling_sd = data['rolling_sd']
     rolling_mean = data['rolling_mean']
-    generated = np.random.normal(rolling_mean,rolling_sd,1000)
+    generated = np.random.lognormal(rolling_mean,rolling_sd,25000) -1
     paths, ends = simulate_rndm_pnl(n_paths, cur, n_days_project,generated)
     df = pd.DataFrame(paths).transpose()
     #for col in df:
@@ -53,6 +54,8 @@ def simulate_returns(data, rolling_lookback, n_paths, n_days_project, pred_col =
     #print(f'Projected Standard Deviation in {n_days_project} days. {np.std(ends)}')
     return np.mean(ends), np.std(ends)
 
+def hurst_exp(series):
+    return compute_Hc(series,kind = 'price', simplified = True)[0]
 
 def historical_test(ticker, rolling_lookback, n_paths, n_days_project):
     data = yfinance.download(f'{ticker}')
@@ -60,6 +63,8 @@ def historical_test(ticker, rolling_lookback, n_paths, n_days_project):
     data['log_return'] = np.log(1 + data.Pct_Change)
     data['rolling_mean'] = data['Pct_Change'].rolling(rolling_lookback).mean()
     data['rolling_sd'] = data['Pct_Change'].rolling(rolling_lookback).std()
+    #data['rolling_hurst'] = data['Close'].rolling(100).apply(hurst_exp)
+    #print(data)
     data = data.dropna(axis = 0)
     E = []
     s = []
@@ -80,6 +85,7 @@ def historical_test(ticker, rolling_lookback, n_paths, n_days_project):
 
 def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_lookback, n_paths, n_days_project):
     dfs = {}
+    dtas = []
     for tkr in tkrs:#,'SPY', 'AAPL', 'FB', 'AMZN', 'BA', 'GM']:
         pnls = {}
         dta = historical_test(ticker = tkr, rolling_lookback = rolling_lookback, n_paths = n_paths, n_days_project  = n_days_project)
@@ -88,23 +94,32 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
         pnl_tkr = [starting_amt]
         
         stopped_out = False
+        stopped_out_before = False
         wait = 0
         if strat == 'Long':
             for i in range(len(dta)-1):
                 print(str(int(i)/(len(dta)-1)*100) + f'% done backtesting {tkr}')
                 clear_output(wait = True)
                 
-                max_val = max(pnl)
+                if not stopped_out_before:
+                    max_val = max(pnl)
+                else:
+                    max_val = max(pnl[-1*stopped_val+1:])
                 cur_val = pnl[i]
-                if (cur_val - max_val)/max_val < -1*max_draw:
-                    stopped_out = True
-                    print('stopped')
+                if not stopped_out:
+                    if (cur_val - max_val)/max_val < -1*max_draw:
+                        stopped_out = True
+                        stopped_out_before = True
+                        stopped_val = i
+                        print('stopped')
+
                 if stopped_out and wait < wait_after_stop:
                     pnl.append(pnl[-1])
                     pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
                     wait += 1
                     continue
-                else:    
+                else:
+                    wait = 0
                     stopped_out = False
                     pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
                     if dta.iloc[i]['Close'] < dta.iloc[i]['E']:
@@ -118,17 +133,24 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
                 print(str(int(i)/(len(dta)-1)*100) + f'% done backtesting {tkr}')
                 clear_output(wait = True)
                 
-                max_val = max(pnl)
+                if not stopped_out_before:
+                    max_val = max(pnl)
+                else:
+                    max_val = max(pnl[-1*stopped_val+1:])
                 cur_val = pnl[i]
-                
-                if (cur_val - max_val)/max_val < -1*max_draw:
-                    stopped_out = True
-                    print('stopped')
+                if not stopped_out:
+                    if (cur_val - max_val)/max_val < -1*max_draw:
+                        stopped_out = True
+                        stopped_out_before = True
+                        stopped_val = i
+                        print('stopped')
+
                 if stopped_out and wait < wait_after_stop:
                     pnl.append(pnl[-1])
                     pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
                     wait += 1
                     continue
+
                 else:
                     stopped_out = False
                     pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
@@ -146,14 +168,23 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
                 max_val = max(pnl)
                 cur_val = pnl[i]
                 
-                if (cur_val - max_val)/max_val < -1*max_draw:
-                    stopped_out = True
-                    print('stopped')
+                if not stopped_out_before:
+                    max_val = max(pnl)
+                else:
+                    max_val = max(pnl[-1*stopped_val+1:])
+                cur_val = pnl[i]
+                if not stopped_out:
+                    if (cur_val - max_val)/max_val < -1*max_draw:
+                        stopped_out = True
+                        stopped_out_before = True
+                        stopped_val = i
+                        print('stopped')
+
                 if stopped_out and wait < wait_after_stop:
                     pnl.append(pnl[-1])
                     pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
                     wait += 1
-                    continue 
+                    continue
                 else:
                     pnl_tkr.append(pnl_tkr[-1] * (1+dta.iloc[i+1]['Pct_Change']))
                     if dta.iloc[i]['Close'] > dta.iloc[i]['E']:
@@ -171,11 +202,12 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
         df['Strat_Ret'] = df[f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'] - df[f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'].shift(1)
         df = df.set_index(yfinance.download(f'{tkr}').index[:(-n_days_project -rolling_lookback)])
         dfs[f'{tkr}'] = df
+        dtas.append(dta)
         #dfs.append(df)
     length = len(tkrs)
     keys = list(dfs.keys())
     if length > 1:
-        fig, axs = plt.subplots(length, squeeze=False, constrained_layout = True)
+        fig, axs = plt.subplots(ncols = length,nrows = 2, squeeze=False, constrained_layout = True)
         for i in range(length):
             for col in dfs[keys[i]]:
                 axs[i][0].plot(dfs[keys[i]][col], label = f'{col}')
@@ -184,10 +216,10 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
             axs[i][0].set_title(f'{tkrs[i]}_lookback={rolling_lookback}_n_paths={n_paths}_n_days_project={n_days_project}_backtest')
             
             axs[i][0].legend()
-        axs[length+1][0].hist(dta['Error'])
-        axs[length+1][0].set_xlabel('Error')
-        axs[length+1][0].set_ylabel('Frequency')
-        axs[length+1][0].set_title(f'{tkr}_prediction_errors')
+            axs[i][1].hist(dtas[i]['Error'])
+            axs[i][1].set_xlabel('Error')
+            axs[i][1].set_ylabel('Frequency')
+            axs[i][1].set_title(f'{tkr}_prediction_errors')
     else:
         fig, axs = plt.subplots(2, squeeze=False, constrained_layout = True)
         for col in dfs[keys[0]]:
