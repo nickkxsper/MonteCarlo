@@ -83,11 +83,13 @@ def historical_test(ticker, rolling_lookback, n_paths, n_days_project):
     return data
 
 
-def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_lookback, n_paths, n_days_project):
+def sim_and_test(strat, rfr, starting_amt, max_draw, wait_after_stop, tkrs, rolling_lookback, n_paths, n_days_project):
+    
     dfs = {}
     dtas = []
     for tkr in tkrs:#,'SPY', 'AAPL', 'FB', 'AMZN', 'BA', 'GM']:
         pnls = {}
+        #print('eeee')
         dta = historical_test(ticker = tkr, rolling_lookback = rolling_lookback, n_paths = n_paths, n_days_project  = n_days_project)
         
         pnl = [starting_amt]
@@ -198,7 +200,7 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
                         pnl.append(pnl[-1]*(1+dta.iloc[i+1]['Pct_Change']))
                     else:
                         pnl.append(pnl[-1])
-            print(f"Trades: {trades}")
+        print(f"Trades: {trades}")
       
         pnls[f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'] = pnl 
         pnls[f'Long_{tkr}'] = pnl_tkr
@@ -242,24 +244,30 @@ def sim_and_test(strat, starting_amt, max_draw, wait_after_stop, tkrs, rolling_l
         
         
     for tkr in tkrs:
-        mean_strat = np.mean(dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'])
-        sd_strat = np.std(dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'])
-        sharpe_strat = mean_strat/sd_strat
+        #mean_strat = np.mean(dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'])
+        num_years = ((datetime.datetime.strptime(str(dfs[f'{tkr}'].index[-1]),'%Y-%m-%d %H:%M:%S').year + (datetime.datetime.strptime(str(dfs[f'{tkr}'].index[-1]),'%Y-%m-%d %H:%M:%S').month)/12))  - ((datetime.datetime.strptime(str(dfs[f'{tkr}'].index[0]),'%Y-%m-%d %H:%M:%S').year + (datetime.datetime.strptime(str(dfs[f'{tkr}'].index[0]),'%Y-%m-%d %H:%M:%S').month)/12))  #2021-06-04 00:00:00
+        
         total_ret_strat = (dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'][-1] - dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'][0])/dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'][0]
+        sd_tmp = dfs[f'{tkr}'].pct_change().replace([np.inf, -np.inf], np.nan).dropna(axis = 0)/100
+        sd_strat = np.std(sd_tmp[f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'])
+        #sd_strat = np.std(dfs[f'{tkr}'][f'{rolling_lookback}_{n_paths}_{n_days_project}_{tkr}'])
+        sharpe_strat = (total_ret_strat- rfr*num_years)/sd_strat
         total_ret_strat *=100
         
-        mean_control = np.mean(dfs[f'{tkr}'][f'Long_{tkr}'])
-        sd_control = np.std(dfs[f'{tkr}'][f'Long_{tkr}'])
-        sharpe_control = mean_control/sd_control
+        
+        #mean_control = np.mean(dfs[f'{tkr}'][f'Long_{tkr}'])
         total_ret_hodl = (dfs[f'{tkr}'][f'Long_{tkr}'][-1] - dfs[f'{tkr}'][f'Long_{tkr}'][0])/dfs[f'{tkr}'][f'Long_{tkr}'][0]
+        sd_tmp = dfs[f'{tkr}'].pct_change().replace([np.inf, -np.inf], np.nan).dropna(axis = 0)/100
+        sd_control = np.std(sd_tmp[f'{tkr}'][f'Long_{tkr}'])
+        sharpe_control = (total_ret_hodl - rfr*num_years)/sd_control
         total_ret_hodl *=100
         
         print(f'Strat Sharpe ({rolling_lookback}_{n_paths}_{n_days_project}_{tkr}): {sharpe_strat}, Buy and Hold Sharpe ({tkr}): {sharpe_control}')
         print(f'Return Strat(%): {total_ret_strat}, Return Buy and Hold(%): {total_ret_hodl}')
-        num_years = ((datetime.datetime.strptime(str(dfs[f'{tkr}'].index[-1]),'%Y-%m-%d %H:%M:%S').year + (datetime.datetime.strptime(str(dfs[f'{tkr}'].index[-1]),'%Y-%m-%d %H:%M:%S').month)/12))  - ((datetime.datetime.strptime(str(dfs[f'{tkr}'].index[0]),'%Y-%m-%d %H:%M:%S').year + (datetime.datetime.strptime(str(dfs[f'{tkr}'].index[0]),'%Y-%m-%d %H:%M:%S').month)/12))  #2021-06-04 00:00:00
-        print(num_years)
-        print(f'Anualized Return Strat(%): {(1+ total_ret_strat/100)**(1/num_years)-1}, Anualized Return Buy and Hold(%): {(1+ total_ret_hodl/100)**(1/num_years)- 1}')
         
+        print(f'Anualized Return Strat(%): {(1+ total_ret_strat/100)**(1/num_years)-1}, Anualized Return Buy and Hold(%): {(1+ total_ret_hodl/100)**(1/num_years)- 1}')
         print(f'Anualized Vol Strat(%): {(1+ sd_strat/100)**(1/num_years)-1}, Anualized Vol Buy and Hold(%): {(1+ sd_control/100)**(1/num_years)- 1}')
+        print(f'Anualized Sharpe Strat: {sharpe_strat*np.sqrt(252)}, Anualized Sharpe Buy and Hold: {sharpe_control*np.sqrt(252)}')
         print('\n')
+
     return dfs
